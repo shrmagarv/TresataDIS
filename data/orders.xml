@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<orders>
+  <order>
+    <order_id>10001</order_id>
+    <customer_id>5001</customer_id>
+    <order_date>2025-03-15</order_date>
+    <items>
+      <item>
+        <product_id>1001</product_id>
+        <quantity>1</quantity>
+        <unit_price>1299.99</unit_price>
+      </item>
+      <item>
+        <product_id>1002</product_id>
+        <quantity>2</quantity>
+        <unit_price>199.99</unit_price>
+      </item>
+    </items>
+    <shipping_address>
+      <street>123 Main St</street>
+      <city>New York</city>
+      <state>NY</state>
+      <zip>10001</zip>
+    </shipping_address>
+    <payment_method>Credit Card</payment_method>
+    <total_amount>1699.97</total_amount>
+  </order>
+  <order>
+    <order_id>10002</order_id>
+    <customer_id>5002</customer_id>
+    <order_date>2025-03-14</order_date>
+    <items>
+      <item>
+        <product_id>1003</product_id>
+        <quantity>1</quantity>
+        <unit_price>249.99</unit_price>
+      </item>
+      <item>
+        <product_id>1008</product_id>
+        <quantity>3</quantity>
+        <unit_price>39.99</unit_price>
+      </item>
+    </items>
+    <shipping_address>
+      <street>456 Oak Ave</street>
+      <city>San Francisco</city>
+      <state>CA</state>
+      <zip>94107</zip>
+    </shipping_address>
+    <payment_method>PayPal</payment_method>
+    <total_amount>369.96</total_amount>
+  </order>
+</orders>

@@ -1,0 +1,142 @@
+# Tresata Data Ingestion Service
+
+A scalable, extensible data ingestion service that can handle the ingestion, transformation, and storage of data from multiple sources. This service supports batch and real-time data processing with various formats (CSV, JSON, XML) and destinations (local storage, database, etc.).
+
+## Features
+
+- **Data Source Integration**: Support for files, APIs, databases
+- **Data Transformation**: Field mapping, validation, and customized transformations
+- **Storage Options**: Local storage, database storage, cloud storage (AWS S3, Azure Blob Storage, Google Cloud Storage)
+- **Real-time Processing**: Kafka integration for streaming data
+- **Error Handling**: Comprehensive logging and retry mechanisms
+- **Monitoring**: Track ingestion progress and statistics
+- **REST API**: Manage ingestion jobs through a RESTful API
+
+## Architecture
+
+The service follows SOLID principles with a modular architecture:
+
+- Source connectors for different data sources
+- Transformers for data manipulation
+- Storage handlers for different destinations (local, database, cloud)
+- Retry and error handling mechanisms
+
+## Cloud Storage Support
+
+The service supports multiple cloud storage providers:
+
+- **AWS S3**: Store and retrieve data from Amazon S3 buckets
+- **Azure Blob Storage**: Integrate with Microsoft Azure Blob Storage containers
+- **Google Cloud Storage**: Use Google Cloud Storage buckets for data persistence
+
+### Cloud Storage Configuration
+
+Configure cloud storage in `application.properties`:
+
+```properties
+# Enable cloud storage
+app.storage.cloud.enabled=true
+app.storage.cloud.provider=aws  # Default provider (aws, azure, gcp)
+app.storage.cloud.local-fallback=true  # Use local storage as fallback
+
+# AWS S3 Configuration
+app.storage.cloud.aws.region=us-east-1
+app.storage.cloud.aws.access-key=your-access-key
+app.storage.cloud.aws.secret-key=your-secret-key
+
+# Azure Blob Storage Configuration
+app.storage.cloud.azure.connection-string=your-connection-string
+
+# Google Cloud Storage Configuration
+app.storage.cloud.gcp.project-id=your-project-id
+app.storage.cloud.gcp.credentials-file=/path/to/credentials.json
+```
+
+### Cloud Storage Usage
+
+Use the following destination format in API requests:
+
+```json
+{
+  "destination": {
+    "type": "CLOUD",
+    "format": "CSV",
+    "location": "provider:bucket:key"
+  }
+}
+```
+
+Where:
+- `provider` is optional (defaults to configured provider) and can be `aws`, `azure`, or `gcp`
+- `bucket` is the S3 bucket name, Azure container, or GCP bucket
+- `key` is the object path within the bucket/container
+
+## Prerequisites
+
+- Docker and Docker Compose
+- JDK 21 (for local development)
+- Maven (for local development)
+
+## Running the Application
+
+### With Docker Compose
+
+1. Clone the repository
+
+2. Navigate to the project directory:
+   ```
+   cd TresataDIS
+   ```
+
+3. Start all services:
+   ```
+   docker-compose up -d
+   ```
+
+4. The application will be available at http://localhost:8080
+   The Kafka UI will be available at http://localhost:8090
+
+### Local Development
+
+1. Ensure you have PostgreSQL and Kafka running locally or configure the application to point to your instances
+
+2. Configure application properties in `src/main/resources/application.properties`
+
+3. Build the project:
+   ```
+   ./mvnw clean install
+   ```
+
+4. Run the application:
+   ```
+   ./mvnw spring-boot:run
+   ```
+
+## API Endpoints
+
+### Job Management
+
+- `POST /api/ingestion/jobs` - Create a new ingestion job
+- `GET /api/ingestion/jobs` - List all jobs
+- `GET /api/ingestion/jobs/{id}` - Get a specific job
+- `POST /api/ingestion/jobs/{id}/queue` - Queue a job for processing
+- `POST /api/ingestion/jobs/{id}/execute` - Execute a job immediately
+
+### Monitoring
+
+- `GET /api/ingestion/jobs/{id}/logs` - Get logs for a job
+- `GET /api/ingestion/jobs/{id}/statistics` - Get statistics for a job
+
+## Configuration
+
+The application can be configured through environment variables or application properties:
+
+- Database connection settings
+- Kafka broker details
+- Storage paths
+- Retry configurations
+- Scheduler settings
+
+## License
+
+[Add your license information here]

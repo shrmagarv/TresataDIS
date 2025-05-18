@@ -1,0 +1,10 @@
+{
+    "name": "Products CSV to Database Processing",
+    "sourceType": "FILE",
+    "sourceFormat": "CSV",
+    "sourceLocation": "data/products.csv",
+    "transformationType": "CSV", 
+    "transformationConfig": "{\"delimiter\": \",\", \"hasHeader\": true}",
+    "destinationType": "DATABASE",
+    "destinationLocation": "products:{\"product_id\":\"INTEGER\",\"product_name\":\"VARCHAR\",\"category\":\"VARCHAR\",\"price\":\"DOUBLE\",\"stock_quantity\":\"INTEGER\"}"
+}

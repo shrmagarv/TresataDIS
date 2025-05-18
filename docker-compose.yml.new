@@ -1,0 +1,111 @@
+version: '3.8'
+services:
+  # Spring Boot application
+  # app:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: tresata-dis-app
+  #   ports:
+  #     - "${APP_PORT:-8080}:8080"
+  #   depends_on:
+  #     - postgres
+  #     - kafka
+  #     - kafka-setup
+  #   environment:
+  #     - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-tresata_dis}
+  #     - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER:-postgres}
+  #     - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+  #     - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:${KAFKA_PORT:-9092}
+  #     - APP_STORAGE_LOCAL_BASE_PATH=/app/data
+  #     # Additional configurations
+  #     - SPRING_JPA_HIBERNATE_DDL_AUTO=validate
+  #     - SPRING_FLYWAY_ENABLED=true
+  #     - LOGGING_LEVEL_COM_SHRMAGARV_TRESATADIS=INFO
+  #   volumes:
+  #     - ${APP_DATA_PATH:-./data}:/app/data
+  #   networks:
+  #     - tresata-network
+  #   restart: unless-stopped
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:latest
+    container_name: tresata-dis-postgres
+    ports:
+      - "4022:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-tresata_dis}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - tresata-network
+
+  # Kafka and Zookeeper
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: tresata-dis-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - tresata-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: tresata-dis-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,INTERNAL://0.0.0.0:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    networks:
+      - tresata-network
+      
+  # Kafka setup service for topic initialization
+  kafka-setup:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: tresata-dis-kafka-setup
+    depends_on:
+      - kafka
+    volumes:
+      - ./kafka-init.sh:/kafka-init.sh
+    command: "bash -c 'chmod +x /kafka-init.sh && /kafka-init.sh'"
+    networks:
+      - tresata-network
+
+  # Kafka UI tool for monitoring
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: tresata-dis-kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    networks:
+      - tresata-network
+
+# Persistent volumes
+volumes:
+  postgres-data:
+    driver: local
+
+# Networks
+networks:
+  tresata-network:
+    driver: bridge
