@@ -38,25 +38,187 @@ public class DatabaseStorage implements DataStorage {
     @Override
     public boolean canHandle(String destinationType) {
         return STORAGE_TYPE.equals(destinationType);
-    }
-    
-    @Override
+    }    @Override
     public String storeData(Resource data, String sourceFormat, String destinationLocation) throws Exception {
         // destinationLocation should be in format "tableName:schema"
-        String[] parts = destinationLocation.split(":");
-        if (parts.length != 2) {
+        // First find the first colon which separates the table name from the schema
+        int colonIndex = destinationLocation.indexOf(':');
+        if (colonIndex == -1 || colonIndex == destinationLocation.length() - 1) {
             throw new IllegalArgumentException("Destination location should be in format 'tableName:schemaJson'");
         }
         
-        String tableName = parts[0];
-        String schemaJson = parts[1];
+        String tableName = destinationLocation.substring(0, colonIndex).trim();
+        String schemaJson = destinationLocation.substring(colonIndex + 1).trim();
         
-        // Parse schema
-        JsonNode schema = objectMapper.readTree(schemaJson);
         Map<String, String> columnTypes = new HashMap<>();
-        for (Iterator<String> it = schema.fieldNames(); it.hasNext(); ) {
-            String column = it.next();
-            columnTypes.put(column, schema.get(column).asText());
+        try {
+            // Log the schema for debugging
+            System.out.println("Raw schema received: " + schemaJson);
+            
+            // Multi-step robust parsing strategy for handling various JSON formats
+            List<String> candidateSchemas = new ArrayList<>();
+            
+            // Candidate 1: Original schema as provided
+            candidateSchemas.add(schemaJson);
+            
+            // Candidate 2: Handle PowerShell single-escaped quotes
+            candidateSchemas.add(schemaJson.replace("\\\"", "\""));
+            
+            // Candidate 3: Handle PowerShell double-escaped quotes and backslashes
+            String doubleUnescaped = schemaJson.replace("\\\"", "\"").replace("\\\\", "\\");
+            candidateSchemas.add(doubleUnescaped);
+            
+            // Candidate 4: Remove all escapes for simple schema formats
+            candidateSchemas.add(schemaJson.replaceAll("\\\\", ""));
+            
+            // Candidate 5: Handle triple-escaped quotes from nested PowerShell calls
+            candidateSchemas.add(schemaJson.replace("\\\\\"", "\""));
+            
+            // Debug each candidate
+            int candidateIndex = 0;
+            for (String candidate : candidateSchemas) {
+                System.out.println("Candidate " + (++candidateIndex) + ": " + candidate);
+            }
+            
+            boolean parsed = false;
+            // Try each candidate schema until one works
+            for (String candidate : candidateSchemas) {
+                try {
+                    JsonNode schema = objectMapper.readTree(candidate);
+                    for (Iterator<String> it = schema.fieldNames(); it.hasNext();) {
+                        String column = it.next();
+                        columnTypes.put(column, schema.get(column).asText());
+                    }
+                    // If we get here, parsing was successful
+                    parsed = true;
+                    System.out.println("Successfully parsed schema with candidate: " + candidate);
+                    break;
+                } catch (Exception e) {
+                    // Log the error and continue to next candidate
+                    System.out.println("Failed to parse candidate: " + e.getMessage());
+                    continue;
+                }
+            }
+            
+            // If none of the candidates worked and the map is empty, try a manual approach
+            if (!parsed && columnTypes.isEmpty()) {
+                System.out.println("All standard parsing methods failed, trying manual parsing...");
+                
+                // Manual parsing as a last resort
+                String strippedJson = schemaJson
+                    .replaceAll("\\\\\"", "\"") // Replace escaped quotes
+                    .replaceAll("\\\\", "") // Remove remaining backslashes
+                    .replaceAll("^\"|\"$", ""); // Remove enclosing quotes if present
+                
+                System.out.println("Stripped JSON for manual parsing: " + strippedJson);
+                
+                // Check if it looks like a JSON object
+                if (strippedJson.startsWith("{") && strippedJson.endsWith("}")) {
+                    // Remove the braces
+                    strippedJson = strippedJson.substring(1, strippedJson.length() - 1);
+                    
+                    // Split by commas not inside quotes
+                    String[] pairs = strippedJson.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)");
+                    for (String pair : pairs) {
+                        // Split each pair by colon not inside quotes
+                        String[] keyValue = pair.split(":(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", 2);
+                        if (keyValue.length == 2) {
+                            String key = keyValue[0].trim().replaceAll("^\"|\"$", "");
+                            String value = keyValue[1].trim().replaceAll("^\"|\"$", "");
+                            columnTypes.put(key, value);
+                            System.out.println("Manually parsed: " + key + " = " + value);
+                        }
+                    }
+                }
+                  // If even the manual parsing failed, try the raw key-value approach
+                if (columnTypes.isEmpty()) {
+                    System.out.println("Manual JSON parsing failed, trying raw key-value parsing...");
+                    // Remove all JSON syntax and just extract key-value pairs
+                    String rawText = schemaJson
+                        .replaceAll("[{}\"]", "") // Remove JSON syntax
+                        .replaceAll("\\\\", "");  // Remove backslashes
+                    
+                    String[] rawPairs = rawText.split(",");
+                    for (String rawPair : rawPairs) {
+                        String[] rawKeyValue = rawPair.split(":");
+                        if (rawKeyValue.length == 2) {
+                            String key = rawKeyValue[0].trim();
+                            String value = rawKeyValue[1].trim();
+                            columnTypes.put(key, value);
+                            System.out.println("Raw parsed: " + key + " = " + value);
+                        }
+                    }
+                }
+                
+                // Final attempt to handle missing commas in JSON (space-separated key-value pairs)
+                if (columnTypes.isEmpty()) {
+                    System.out.println("Trying space-delimited parsing for missing commas...");
+                    // First, try to fix the schema by adding missing commas
+                    String fixedJson = strippedJson;
+                    // Ensure we have a closing brace
+                    if (!fixedJson.endsWith("}")) {
+                        fixedJson = fixedJson + "}";
+                    }
+                    
+                    // Find key-value pairs by regex pattern "key":"value" with no comma
+                    java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\"([^\"]+)\"\\s*:\\s*\"([^\"]+)\"\\s+\"");
+                    java.util.regex.Matcher matcher = pattern.matcher(fixedJson);
+                    
+                    StringBuilder correctedJson = new StringBuilder(fixedJson);
+                    int offset = 0;
+                    
+                    while (matcher.find()) {
+                        // Insert a comma after each key-value pair that's missing one
+                        int insertPosition = matcher.end(2) + 1 + offset;
+                        if (insertPosition < correctedJson.length() && correctedJson.charAt(insertPosition) != ',') {
+                            correctedJson.insert(insertPosition, ',');
+                            offset++;
+                        }
+                    }
+                    
+                    System.out.println("Corrected JSON: " + correctedJson.toString());
+                    
+                    // Try to parse with standard JSON parser
+                    try {
+                        JsonNode schema = objectMapper.readTree(correctedJson.toString());
+                        for (Iterator<String> it = schema.fieldNames(); it.hasNext();) {
+                            String column = it.next();
+                            columnTypes.put(column, schema.get(column).asText());
+                            System.out.println("Comma-corrected parse: " + column + " = " + schema.get(column).asText());
+                        }
+                    } catch (Exception e) {
+                        // If that fails, try a more aggressive space-splitting approach
+                        System.out.println("Corrected JSON parsing failed, trying space-splitting: " + e.getMessage());
+                        
+                        // Remove braces and quotes, then split by spaces or colons
+                        String spaceParsedText = strippedJson
+                            .replaceAll("[{}]", "")
+                            .trim();
+                            
+                        // Split by double quote patterns to extract key-value pairs
+                        pattern = java.util.regex.Pattern.compile("\"([^\"]+)\"\\s*:\\s*\"([^\"]+)\"");
+                        matcher = pattern.matcher(spaceParsedText);
+                        
+                        while (matcher.find()) {
+                            String key = matcher.group(1);
+                            String value = matcher.group(2);
+                            columnTypes.put(key, value);
+                            System.out.println("Space-split parsed: " + key + " = " + value);
+                        }
+                    }
+                }
+            }
+            
+            // If we still have no column types, we failed to parse
+            if (columnTypes.isEmpty()) {
+                throw new IllegalArgumentException("Failed to parse schema: " + schemaJson + 
+                    ". Please ensure it's a valid JSON object with column names and types.");
+            }
+            
+            System.out.println("Final schema parsed with " + columnTypes.size() + " columns: " + columnTypes);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid schema JSON format: " + e.getMessage() + 
+                ". Make sure the schema is properly formatted. Example: 'tableName:{\"column1\":\"VARCHAR\",\"column2\":\"INTEGER\"}'", e);
         }
         
         // Different handling based on source format

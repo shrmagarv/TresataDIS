@@ -1,4 +1,4 @@
-# Tresata Data Ingestion Service - API Test Script
+﻿# Tresata Data Ingestion Service - API Test Script
 
 $baseUrl = "http://localhost:8080/api/ingestion"
 # Use relative paths based on the script location
@@ -91,8 +91,14 @@ $dbSchemaConfig = @{
     category = "VARCHAR"
     price = "DOUBLE"
     stock_quantity = "INTEGER"
+    last_updated = "DATE"  # Added this column which is present in the CSV
 }
+
+# Properly escape the JSON schema to ensure it works with the destination format
 $dbSchema = $dbSchemaConfig | ConvertTo-Json -Compress
+# The schema needs to be properly escaped as it's inserted into the destinationLocation string
+# Replace any double quotes with escaped quotes (\")
+$dbSchemaEscaped = $dbSchema.Replace('"', '\"')
 
 $productsDbJobRequest = @{
     name = "Products CSV to Database Processing"
@@ -102,7 +108,7 @@ $productsDbJobRequest = @{
     transformationType = "CSV"
     transformationConfig = '{"delimiter": ",", "hasHeader": true}'
     destinationType = "DATABASE"
-    destinationLocation = "products:$dbSchema"
+    destinationLocation = "products:$dbSchemaEscaped"
 }
 
 $productsDbJob = Invoke-ApiRequest -Method "Post" -Endpoint "/jobs" -Body $productsDbJobRequest
@@ -123,6 +129,34 @@ $jsonJobRequest = @{
 }
 
 $jsonJob = Invoke-ApiRequest -Method "Post" -Endpoint "/jobs" -Body $jsonJobRequest
+
+# Test 3.1: Create a job for JSON to Database processing - Users table
+Write-Host "`n=== TEST 3.1: Create a JSON to Database Processing Job ===" -ForegroundColor Yellow
+$jsonDbSchemaConfig = @{
+    id = "INTEGER"
+    name = "VARCHAR(100)"
+    email = "VARCHAR(150)"
+    age = "INTEGER"
+    city = "VARCHAR(100)"
+}
+
+# Properly escape the JSON schema for database insertion
+$jsonDbSchema = $jsonDbSchemaConfig | ConvertTo-Json -Compress
+# Replace any double quotes with escaped quotes for proper JSON schema formatting
+$jsonDbSchemaEscaped = $jsonDbSchema.Replace('"', '\"')
+
+$jsonToDbJobRequest = @{
+    name = "JSON to Database - Users Table"
+    sourceType = "FILE"
+    sourceFormat = "JSON"
+    sourceLocation = "$dataPath\sample.json"
+    transformationType = "JSON"
+    transformationConfig = '{}'  # Empty transformation to preserve the original data
+    destinationType = "DATABASE"
+    destinationLocation = "users:$jsonDbSchemaEscaped"  # Insert into users table instead of json_test
+}
+
+$jsonToDbJob = Invoke-ApiRequest -Method "Post" -Endpoint "/jobs" -Body $jsonToDbJobRequest
 
 # ===== XML PROCESSING TESTS =====
 
@@ -153,6 +187,7 @@ $queuedCsvJob = Invoke-ApiRequest -Method "Post" -Endpoint "/jobs/$($csvJob.id)/
 $queuedProductsJob = Invoke-ApiRequest -Method "Post" -Endpoint "/jobs/$($productsJob.id)/queue"
 $queuedProductsDbJob = Invoke-ApiRequest -Method "Post" -Endpoint "/jobs/$($productsDbJob.id)/queue"
 $queuedJsonJob = Invoke-ApiRequest -Method "Post" -Endpoint "/jobs/$($jsonJob.id)/queue"
+$queuedJsonToDbJob = Invoke-ApiRequest -Method "Post" -Endpoint "/jobs/$($jsonToDbJob.id)/queue"
 $queuedXmlJob = Invoke-ApiRequest -Method "Post" -Endpoint "/jobs/$($xmlJob.id)/queue"
 
 # Test 7: Execute all jobs in sequence
@@ -173,6 +208,10 @@ Write-Host "Executing JSON job..." -ForegroundColor Gray
 $executedJsonJob = Invoke-ApiRequest -Method "Post" -Endpoint "/jobs/$($jsonJob.id)/execute"
 Start-Sleep -Seconds 2
 
+Write-Host "Executing JSON to DB job..." -ForegroundColor Gray
+$executedJsonToDbJob = Invoke-ApiRequest -Method "Post" -Endpoint "/jobs/$($jsonToDbJob.id)/execute"
+Start-Sleep -Seconds 2
+
 Write-Host "Executing XML job..." -ForegroundColor Gray
 $executedXmlJob = Invoke-ApiRequest -Method "Post" -Endpoint "/jobs/$($xmlJob.id)/execute"
 Start-Sleep -Seconds 5
@@ -183,6 +222,7 @@ $csvJobStatus = Invoke-ApiRequest -Method "Get" -Endpoint "/jobs/$($csvJob.id)"
 $productsJobStatus = Invoke-ApiRequest -Method "Get" -Endpoint "/jobs/$($productsJob.id)"
 $productsDbJobStatus = Invoke-ApiRequest -Method "Get" -Endpoint "/jobs/$($productsDbJob.id)"
 $jsonJobStatus = Invoke-ApiRequest -Method "Get" -Endpoint "/jobs/$($jsonJob.id)"
+$jsonToDbJobStatus = Invoke-ApiRequest -Method "Get" -Endpoint "/jobs/$($jsonToDbJob.id)"
 $xmlJobStatus = Invoke-ApiRequest -Method "Get" -Endpoint "/jobs/$($xmlJob.id)"
 
 # Test 9: Get job logs and statistics
@@ -197,6 +237,11 @@ $productsDbJobLogs = Invoke-ApiRequest -Method "Get" -Endpoint "/jobs/$($product
 Write-Host "Products DB Job Statistics:" -ForegroundColor Gray
 $productsDbJobStats = Invoke-ApiRequest -Method "Get" -Endpoint "/jobs/$($productsDbJob.id)/statistics"
 
+Write-Host "JSON to DB Job Logs:" -ForegroundColor Gray
+$jsonToDbJobLogs = Invoke-ApiRequest -Method "Get" -Endpoint "/jobs/$($jsonToDbJob.id)/logs"
+Write-Host "JSON to DB Job Statistics:" -ForegroundColor Gray
+$jsonToDbJobStats = Invoke-ApiRequest -Method "Get" -Endpoint "/jobs/$($jsonToDbJob.id)/statistics"
+
 # Test 10: View processed data files
 Write-Host "`n=== TEST 10: View Processed Data Files ===" -ForegroundColor Yellow
 Write-Host "Displaying processed files in output directory:" -ForegroundColor Gray
@@ -210,6 +255,13 @@ Write-Host "Running query to verify products were imported to database:" -Foregr
 docker exec -i tresata-dis-postgres psql -d tresata_dis -U postgres -c "SELECT COUNT(*) FROM products;"
 docker exec -i tresata-dis-postgres psql -d tresata_dis -U postgres -c "SELECT * FROM products LIMIT 5;"
 
+Write-Host "`nRunning query to verify JSON data was imported to users table:" -ForegroundColor Gray
+docker exec -i tresata-dis-postgres psql -d tresata_dis -U postgres -c "SELECT COUNT(*) FROM users;"
+docker exec -i tresata-dis-postgres psql -d tresata_dis -U postgres -c "SELECT * FROM users LIMIT 5;"
+
 Write-Host "`n=== Tests Completed ===" -ForegroundColor Yellow
 Write-Host "Check the output directory for processed files: $dataPath\output" -ForegroundColor Green
-Write-Host "Check the database for products table data" -ForegroundColor Green
+Write-Host "Check the database for products and users tables data" -ForegroundColor Green
+
+
+
